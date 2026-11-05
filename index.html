@@ -312,6 +312,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
 .cal-more{display:none;}
 @media (max-width:900px){ .cal-cell{min-height:70px;font-size:11px;} }
 .followup-preview{max-height:360px;overflow-y:auto;border:1px solid var(--hair);border-radius:8px;}
+.fu-chip.active{background:var(--navy);color:#fff;}
 .followup-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--hair);font-size:13px;}
 .followup-item:last-child{border-bottom:none;}
 .followup-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
@@ -383,7 +384,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   <div class="brand">
     <div class="chop-mark">妥</div>
     <div>
-      <h1>Company Secretary <span style="font-size:11px;font-weight:600;color:var(--slate);vertical-align:middle;">build 2026-11-04-v3</span></h1>
+      <h1>Company Secretary <span style="font-size:11px;font-weight:600;color:var(--slate);vertical-align:middle;">build 2026-11-05-v1</span></h1>
       <p>Annual Return • Deregistration • Compliance</p>
       <div class="sync-note">
         <span id="cloudStatus"></span><br>
@@ -549,6 +550,16 @@ body.off-view-payment .off-filing-col { display: none !important; }
         <button class="btn-secondary-outline followup-range-btn active" data-range="today">今日 Today</button>
         <button class="btn-secondary-outline followup-range-btn" data-range="week">未來7日 Next 7 days</button>
         <button class="btn-secondary-outline" id="btnPrintFollowup" style="margin-left:auto;">🖨️ Print</button>
+      </div>
+      <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
+        <div id="fuChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        <input type="text" id="fuSearch" placeholder="搜尋公司名 Search…" style="padding:7px 12px;border:1px solid var(--hair-dark);border-radius:8px;min-width:180px;">
+        <select id="fuSort" style="padding:7px 10px;border:1px solid var(--hair-dark);border-radius:8px;">
+          <option value="overdue">排序：最逾期優先</option>
+          <option value="recent">排序：最近逾期優先</option>
+          <option value="name">排序：公司名</option>
+          <option value="secretary">排序：負責人</option>
+        </select>
       </div>
       <div id="followupPageList"></div>
     </div>
@@ -1780,7 +1791,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   }
 
   let suppressConflictCheck = false;
-  const APP_BUILD = '2026-11-04-v3';
+  const APP_BUILD = '2026-11-05-v1';
   let appStale = false;
   function markStale(newer){
     if(appStale) return; appStale = true;
@@ -3100,14 +3111,14 @@ body.off-view-payment .off-filing-col { display: none !important; }
   }
   function getTodayFollowups(){
     const items = [];
-    records.filter(r=>!isCompletedOverall(r)).forEach(r=>{
+    records.filter(r=>!isCompletedOverall(r) && !fuIsHidden(r)).forEach(r=>{
       const pd = primaryDeadline(r);
       const d = daysUntil(pd.date);
       if(d === null || isNaN(d)) return;
       if(d < 0) items.push({name:r.companyEn, jurisdiction:r.jurisdiction, kind:'overdue', d, label:pd.label, deadline:pd.date, src:'Annual'});
       else if(d === 0) items.push({name:r.companyEn, jurisdiction:r.jurisdiction, kind:'today', d, label:pd.label, deadline:pd.date, src:'Annual'});
     });
-    deregRecords.filter(r=>!r.completed).forEach(r=>{
+    deregRecords.filter(r=>!r.completed && !fuIsHidden(r)).forEach(r=>{
       const d = daysUntil(r.deadline);
       if(d === null || isNaN(d)) return;
       if(d < 0) items.push({name:r.companyEn, jurisdiction:'', kind:'overdue', d, label:'Dereg', deadline:r.deadline, src:'Dereg'});
@@ -3117,22 +3128,30 @@ body.off-view-payment .off-filing-col { display: none !important; }
     return items;
   }
 
-  function getFollowupWorkItems(rangeDays){
+  function localToday(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+  function fuIsHidden(rec){ if(rec.fuMuted) return 'muted'; if(rec.fuSnooze && rec.fuSnooze > localToday()) return 'snoozed'; return ''; }
+  function fuRecs(type){ return type==='annual' ? records : (type==='dereg' ? deregRecords : otherRecords); }
+  function getFollowupWorkItems(rangeDays, includeHidden){
     const items = [];
-    records.filter(r=>!isCompletedOverall(r)).forEach(r=>{
+    const keep = r => includeHidden || !fuIsHidden(r);
+    records.filter(r=>!isCompletedOverall(r) && keep(r)).forEach(r=>{
       const pd = primaryDeadline(r);
       const d = daysUntil(pd.date);
       if(d === null || isNaN(d)) return;
-      if(d <= rangeDays) items.push({id:r.id, recType:'annual', name:r.companyEn, jurisdiction:r.jurisdiction, kind: d<0?'overdue':(d===0?'today':'upcoming'), d, label:pd.label});
+      if(d <= rangeDays){
+        const it = r.jurisdiction==='HK' ? r : ((r.complianceItems||{})[pd.key] || {});
+        items.push({id:r.id, recType:'annual', name:r.companyEn, jurisdiction:r.jurisdiction, kind: d<0?'overdue':(d===0?'today':'upcoming'), d, label:pd.label, reminders: it.reminders||0, lastReminded: it.lastReminded||'', secretary: r.secretary||'', hidden: fuIsHidden(r), snooze: r.fuSnooze||''});
+      }
     });
-    deregRecords.filter(r=>!r.completed).forEach(r=>{
+    deregRecords.filter(r=>!r.completed && keep(r)).forEach(r=>{
       const d = daysUntil(r.deadline);
       if(d === null || isNaN(d)) return;
-      if(d <= rangeDays) items.push({id:r.id, recType:'dereg', name:r.companyEn, jurisdiction:'', kind: d<0?'overdue':(d===0?'today':'upcoming'), d, label:'Dereg'});
+      if(d <= rangeDays) items.push({id:r.id, recType:'dereg', name:r.companyEn, jurisdiction:'', kind: d<0?'overdue':(d===0?'today':'upcoming'), d, label:'Dereg', reminders:0, lastReminded:'', secretary:'', hidden: fuIsHidden(r), snooze: r.fuSnooze||''});
     });
-    otherRecords.filter(r=>r.status!=='Completed').forEach(r=>{
+    otherRecords.filter(r=>r.status!=='Completed' && keep(r)).forEach(r=>{
       const label = (r.docTypes||[]).map(t=> t==='Other' && r.otherText ? r.otherText : t).join(', ') || 'Other';
-      items.push({id:r.id, recType:'other', name:r.companyEn, jurisdiction:'', kind:'other', d:9999, label});
+      const sentAgo = (r.sent && !r.returned) ? (-daysUntil(r.sent)) : null;
+      items.push({id:r.id, recType:'other', name:r.companyEn, jurisdiction:'', kind:'other', d:9999, label, reminders: r.reminders||0, lastReminded: r.lastReminded||'', secretary:'', sentAgo: (sentAgo!==null && !isNaN(sentAgo) && sentAgo>=0) ? sentAgo : null, hidden: fuIsHidden(r), snooze: r.fuSnooze||''});
     });
     items.sort((a,b)=>a.d-b.d);
     return items;
@@ -3220,35 +3239,145 @@ body.off-view-payment .off-filing-col { display: none !important; }
     $('#waOverlay').classList.add('open');
   }
   let followupRange = 0;
+  let fuFilter = 'all', fuSort = 'overdue', fuSearch = '', fuShowHidden = false;
+  const fuOpen = new Set(['b1']);
+  const FU_FILTERS = [['all','全部'],['annual','Annual'],['nar1','NAR1'],['bvi','BVI'],['cayman','Cayman'],['dereg','Dereg'],['other','Other']];
+  function fuMatchFilter(i, f){
+    switch(f){
+      case 'annual': return i.recType==='annual';
+      case 'nar1': return i.label==='NAR1';
+      case 'bvi': return i.jurisdiction==='BVI';
+      case 'cayman': return i.jurisdiction==='Cayman';
+      case 'dereg': return i.recType==='dereg';
+      case 'other': return i.recType==='other';
+      default: return true;
+    }
+  }
+  function fuSortList(list){
+    const arr = list.slice();
+    if(fuSort==='recent') arr.sort((a,b)=>b.d-a.d);
+    else if(fuSort==='name') arr.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    else if(fuSort==='secretary') arr.sort((a,b)=>(a.secretary||'~').localeCompare(b.secretary||'~') || a.d-b.d);
+    else arr.sort((a,b)=>a.d-b.d);
+    return arr;
+  }
+  async function fuSetHidden(type, ids, mode, date){
+    const recs = fuRecs(type); let n = 0, firstName = '';
+    pushUndo();
+    ids.forEach(id=>{
+      const r = recs.find(x=>x.id===id); if(!r) return;
+      if(mode==='mute'){ r.fuMuted = true; delete r.fuSnooze; }
+      else if(mode==='snooze'){ r.fuSnooze = date; delete r.fuMuted; }
+      else { delete r.fuMuted; delete r.fuSnooze; }
+      n++; if(!firstName) firstName = r.companyEn;
+    });
+    if(!n) return;
+    const what = mode==='mute' ? '唔再提醒' : (mode==='snooze' ? `延後到 ${date}` : '復原提醒');
+    logActivity(`Followup ${what}`, n>1 ? `${n} items` : firstName);
+    await saveData(); renderFollowupPage(); updateSidebarBadges();
+    showToast(mode==='restore' ? '已復原 Restored' : `已${what} (${n})`);
+  }
+  function openSnoozeMenu(type, id){
+    const addDays = n => { const d=new Date(); d.setDate(d.getDate()+n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+    const ov = document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;';
+    ov.innerHTML = `<div style="background:#fff;border-radius:12px;padding:20px;min-width:260px;display:flex;flex-direction:column;gap:8px;">
+      <div style="font-weight:700;">⏰ 延後到幾時再提醒？</div>
+      <button class="btn-secondary" data-d="${addDays(7)}">7 日後</button>
+      <button class="btn-secondary" data-d="${addDays(14)}">14 日後</button>
+      <button class="btn-secondary" data-d="${addDays(30)}">30 日後</button>
+      <div style="display:flex;gap:6px;"><input type="date" id="fuSnoozeDate" style="flex:1;"><button class="btn-secondary" id="fuSnoozeGo">確定</button></div>
+      <button class="btn-secondary-outline" id="fuSnoozeCancel">取消</button></div>`;
+    document.body.appendChild(ov);
+    const close = ()=> ov.remove();
+    ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+    ov.querySelectorAll('button[data-d]').forEach(b=>b.addEventListener('click', ()=>{ close(); fuSetHidden(type,[id],'snooze',b.dataset.d); }));
+    ov.querySelector('#fuSnoozeGo').addEventListener('click', ()=>{ const v = ov.querySelector('#fuSnoozeDate').value; if(!v){ showToast('請揀日期'); return; } close(); fuSetHidden(type,[id],'snooze',v); });
+    ov.querySelector('#fuSnoozeCancel').addEventListener('click', close);
+  }
   function renderFollowupPage(){
-    const items = getFollowupWorkItems(followupRange);
+    const all = getFollowupWorkItems(followupRange, true);
+    const visibleAll = all.filter(i=>!i.hidden);
+    const q = fuSearch.trim().toLowerCase();
+    const filtering = fuFilter!=='all' || !!q;
+    const pass = i => fuMatchFilter(i, fuFilter) && (!q || (i.name||'').toLowerCase().includes(q));
+    const shown = visibleAll.filter(pass);
+    const hiddenList = all.filter(i=>i.hidden && pass(i));
+    // controls
+    $('#fuChips').innerHTML = FU_FILTERS.map(([k,l])=>`<button class="btn-secondary-outline fu-chip ${fuFilter===k?'active':''}" data-f="${k}" style="padding:5px 12px;font-size:12px;">${l} (${visibleAll.filter(i=>fuMatchFilter(i,k)).length})</button>`).join('');
+    $('#fuChips').querySelectorAll('.fu-chip').forEach(b=>b.addEventListener('click', ()=>{ fuFilter=b.dataset.f; renderFollowupPage(); }));
     const el = $('#followupPageList');
-    if(items.length === 0){ el.innerHTML = '<div class="followup-empty">冇嘢要跟進 🎉<br>Nothing to follow up on.</div>'; return; }
-    const groups = {overdue:[], today:[], upcoming:[], other:[]};
-    items.forEach(i=> groups[i.kind].push(i));
-    function section(title, list, dotCls){
-      if(!list.length) return '';
-      return `<div class="cleanup-group-title" style="margin-top:16px;">${escHtml(title)} (${list.length})</div>` +
-        list.map(i=>`
+    if(visibleAll.length === 0 && all.length === 0){ el.innerHTML = '<div class="followup-empty">冇嘢要跟進 🎉<br>Nothing to follow up on.</div>'; return; }
+    const groups = {b1:[], b2:[], b3:[], today:[], upcoming:[], other:[]};
+    shown.forEach(i=>{
+      if(i.kind==='overdue'){ const a=-i.d; (a<=30?groups.b1:(a<=180?groups.b2:groups.b3)).push(i); }
+      else groups[i.kind].push(i);
+    });
+    function rowHtml(i, dotCls){
+      const meta = [];
+      meta.push(`🔔 提醒 ${i.reminders||0} 次`);
+      if(i.lastReminded) meta.push(`最近 ${escHtml(fmtDate(i.lastReminded))}`);
+      if(i.sentAgo!==null && i.sentAgo!==undefined) meta.push(`已發出 ${i.sentAgo} 日，未收返`);
+      if(i.secretary) meta.push(escHtml(i.secretary));
+      return `
         <div class="followup-item" style="flex-wrap:wrap;">
           <span class="followup-dot ${dotCls}"></span>
           <span class="fu-name">${escHtml(i.name)}${i.jurisdiction?` <span style="color:var(--slate);font-weight:500;">(${i.jurisdiction})</span>`:''}</span>
           <span class="fu-when">${escHtml(i.label)}${i.d!==9999 ? (i.d<0?` · ${Math.abs(i.d)}d overdue`:(i.d===0?' · Due today':` · ${i.d}d left`)) : ''}</span>
           <button class="btn-secondary followup-complete-btn" data-id="${i.id}" data-type="${i.recType}" style="padding:5px 10px;font-size:12px;margin-left:10px;">✓ Complete</button>
           <button class="btn-secondary followup-msg-btn" data-id="${i.id}" data-type="${i.recType}" style="padding:5px 10px;font-size:12px;">💬 Message</button>
-        </div>`).join('');
+          <button class="btn-secondary followup-snooze-btn" data-id="${i.id}" data-type="${i.recType}" style="padding:5px 10px;font-size:12px;" title="延後提醒">⏰ 延後</button>
+          <button class="btn-secondary followup-mute-btn" data-id="${i.id}" data-type="${i.recType}" style="padding:5px 10px;font-size:12px;" title="唔再提醒（可以復原）">🔕</button>
+          <div style="flex-basis:100%;font-size:11px;color:var(--slate);padding-left:18px;">${meta.join(' · ')}</div>
+        </div>`;
     }
-    el.innerHTML = section('🔴 逾期 Overdue', groups.overdue, 'overdue') +
-                   section('🟠 今日 Due Today', groups.today, 'today') +
-                   (followupRange > 0 ? section('🔵 未來幾日 Upcoming', groups.upcoming, 'today') : '') +
-                   section('📁 Other 未完成', groups.other, 'today');
-    el.querySelectorAll('.followup-complete-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=> completeFollowupItem(btn.dataset.type, btn.dataset.id));
-    });
-    el.querySelectorAll('.followup-msg-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=> openWaModalFor(btn.dataset.type, btn.dataset.id));
-    });
+    function section(title, list, dotCls){
+      if(!list.length) return '';
+      return `<div class="cleanup-group-title" style="margin-top:16px;">${escHtml(title)} (${list.length})</div>` + fuSortList(list).map(i=>rowHtml(i,dotCls)).join('');
+    }
+    function band(key, title, list, bulk){
+      if(!list.length) return '';
+      const open = filtering || fuOpen.has(key);
+      return `<div class="cleanup-group-title fu-band-head" data-b="${key}" style="margin-top:16px;cursor:pointer;display:flex;align-items:center;gap:10px;">
+          <span>${open?'▾':'▸'} ${escHtml(title)} (${list.length})</span>
+          ${bulk ? `<button class="btn-secondary fu-bulk-mute" data-b="${key}" style="padding:3px 10px;font-size:11px;">🔕 全部標做唔再提醒</button>` : ''}
+        </div>` + (open ? fuSortList(list).map(i=>rowHtml(i,'overdue')).join('') : '');
+    }
+    let html = band('b1','🔴 逾期 1–30 日 Overdue',groups.b1,false) +
+               band('b2','🟠 逾期 31–180 日',groups.b2,false) +
+               band('b3','⚪ 逾期 180 日以上（舊積壓）',groups.b3,true) +
+               section('🟠 今日 Due Today', groups.today, 'today') +
+               (followupRange > 0 ? section('🔵 未來幾日 Upcoming', groups.upcoming, 'today') : '') +
+               section('📁 Other 未完成', groups.other, 'today');
+    if(!shown.length) html = `<div class="followup-empty">${filtering ? '呢個篩選／搜尋冇結果' : '冇嘢要跟進 🎉'}</div>`;
+    if(all.some(i=>i.hidden)){
+      const hCount = all.filter(i=>i.hidden).length;
+      html += `<div style="margin-top:24px;"><button class="btn-secondary-outline" id="fuToggleHidden" style="padding:6px 12px;font-size:12px;">${fuShowHidden?'▾':'▸'} 👁 已收埋 Hidden (${hCount})</button></div>`;
+      if(fuShowHidden){
+        html += hiddenList.map(i=>`
+          <div class="followup-item" style="flex-wrap:wrap;opacity:.75;">
+            <span class="fu-name">${escHtml(i.name)}${i.jurisdiction?` (${i.jurisdiction})`:''}</span>
+            <span class="fu-when">${escHtml(i.label)} · ${i.hidden==='muted' ? '🔕 唔再提醒' : '⏰ 延後到 '+escHtml(fmtDate(i.snooze))}</span>
+            <button class="btn-secondary followup-restore-btn" data-id="${i.id}" data-type="${i.recType}" style="padding:5px 10px;font-size:12px;margin-left:10px;">↩ 復原</button>
+          </div>`).join('') || '<div class="followup-empty">冇符合篩選嘅已收埋項目</div>';
+      }
+    }
+    el.innerHTML = html;
+    el.querySelectorAll('.followup-complete-btn').forEach(btn=> btn.addEventListener('click', ()=> completeFollowupItem(btn.dataset.type, btn.dataset.id)));
+    el.querySelectorAll('.followup-msg-btn').forEach(btn=> btn.addEventListener('click', ()=> openWaModalFor(btn.dataset.type, btn.dataset.id)));
+    el.querySelectorAll('.followup-snooze-btn').forEach(btn=> btn.addEventListener('click', ()=> openSnoozeMenu(btn.dataset.type, btn.dataset.id)));
+    el.querySelectorAll('.followup-mute-btn').forEach(btn=> btn.addEventListener('click', ()=> fuSetHidden(btn.dataset.type, [btn.dataset.id], 'mute')));
+    el.querySelectorAll('.followup-restore-btn').forEach(btn=> btn.addEventListener('click', ()=> fuSetHidden(btn.dataset.type, [btn.dataset.id], 'restore')));
+    el.querySelectorAll('.fu-band-head').forEach(h=> h.addEventListener('click', e=>{ if(e.target.closest('.fu-bulk-mute')) return; const k=h.dataset.b; if(fuOpen.has(k)) fuOpen.delete(k); else fuOpen.add(k); renderFollowupPage(); }));
+    el.querySelectorAll('.fu-bulk-mute').forEach(b=> b.addEventListener('click', async ()=>{
+      const list = groups[b.dataset.b] || [];
+      if(!confirm(`將呢 ${list.length} 項逾期 180 日以上嘅項目全部標做「唔再提醒」？\n資料唔會刪除，可以喺最底「已收埋」復原，亦可以用 Undo。`)) return;
+      for(const t of ['annual','dereg','other']){ const ids = list.filter(i=>i.recType===t).map(i=>i.id); if(ids.length) await fuSetHidden(t, ids, 'mute'); }
+    }));
+    const th = $('#fuToggleHidden'); if(th) th.addEventListener('click', ()=>{ fuShowHidden = !fuShowHidden; renderFollowupPage(); });
   }
+  $('#fuSearch').addEventListener('input', e=>{ fuSearch = e.target.value; renderFollowupPage(); });
+  $('#fuSort').addEventListener('change', e=>{ fuSort = e.target.value; renderFollowupPage(); });
   document.querySelectorAll('.followup-range-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('.followup-range-btn').forEach(b=>b.classList.remove('active'));
