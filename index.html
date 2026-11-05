@@ -348,6 +348,11 @@ body.off-view-payment .off-filing-col { display: none !important; }
   .btn-row{justify-content:flex-start;}
 }
 @media print {
+  body.printing-callist * { visibility: hidden !important; }
+  body.printing-callist #calListPrint, body.printing-callist #calListPrint * { visibility: visible !important; }
+  body.printing-callist #calendarView { display: none !important; }
+}
+@media print {
   body * { visibility: hidden; }
   #calendarView, #calendarView * { visibility: visible; }
   #calendarView { position: absolute; left: 0; top: 0; width: 100%; padding: 10px; }
@@ -384,13 +389,13 @@ body.off-view-payment .off-filing-col { display: none !important; }
   <div class="brand">
     <div class="chop-mark">妥</div>
     <div>
-      <h1>Company Secretary <span style="font-size:11px;font-weight:600;color:var(--slate);vertical-align:middle;">build 2026-11-05-v1</span></h1>
+      <h1>Company Secretary <span style="font-size:11px;font-weight:600;color:var(--slate);vertical-align:middle;">build 2026-11-05-v5</span></h1>
       <p>Annual Return • Deregistration • Compliance</p>
       <div class="sync-note">
         <span id="cloudStatus"></span><br>
         <span id="fileLinkStatus">檢查緊本機檔案連結…</span><br>
         <span id="backupFolderStatus">檢查緊備份資料夾連結…</span><br>
-        <span style="margin-left:12px;">同事需「匯入Data」揀嗰個檔案同步</span>
+        <span id="syncHint" style="margin-left:12px;">同事需「匯入Data」揀嗰個檔案同步</span>
       </div>
     </div>
   </div>
@@ -1773,6 +1778,14 @@ body.off-view-payment .off-filing-col { display: none !important; }
     const statusEl = $('#fileLinkStatus');
     const btnLink = $('#btnLinkFile'), btnReconnect = $('#btnReconnectFile'), btnReload = $('#btnReloadFile'), btnUnlink = $('#btnUnlinkFile');
     if(!statusEl) return;
+    if(cloudOn()){
+      // Cloud mode: Common Drive file link is not used any more
+      statusEl.style.display = 'none';
+      const nx = statusEl.nextElementSibling; if(nx && nx.tagName === 'BR') nx.style.display = 'none';
+      [btnLink, btnReconnect, btnReload, btnUnlink].forEach(b=>{ if(b) b.style.display='none'; });
+      const hint = document.getElementById('syncHint'); if(hint) hint.textContent = '資料由雲端自動同步，同事毋須匯入';
+      return;
+    }
     if(!fsaSupported()){
       statusEl.textContent = '你嘅瀏覽器（Safari / Firefox）唔支援直接連結本機檔案，請用下面「匯出/匯入Data」代替';
       btnLink.style.display='none'; btnReconnect.style.display='none'; btnReload.style.display='none'; btnUnlink.style.display='none';
@@ -1791,7 +1804,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   }
 
   let suppressConflictCheck = false;
-  const APP_BUILD = '2026-11-05-v1';
+  const APP_BUILD = '2026-11-05-v5';
   let appStale = false;
   function markStale(newer){
     if(appStale) return; appStale = true;
@@ -2561,10 +2574,71 @@ body.off-view-payment .off-filing-col { display: none !important; }
   $('#calPrev').addEventListener('click', ()=>{ calViewDate.setMonth(calViewDate.getMonth()-1); renderCalendar(); });
   $('#calNext').addEventListener('click', ()=>{ calViewDate.setMonth(calViewDate.getMonth()+1); renderCalendar(); });
   $('#calJurisdictionFilter').addEventListener('change', ()=>{ calJurisdictionFilter = $('#calJurisdictionFilter').value; renderCalendar(); });
-  $('#calPrint').addEventListener('click', ()=>{
-    logActivity('Print Calendar', $('#calMonthLabel').textContent);
+  function openCalPrintDialog(){
+    const y = calViewDate.getFullYear(), m = calViewDate.getMonth();
+    const pad = n => String(n).padStart(2,'0');
+    const first = `${y}-${pad(m+1)}-01`, last = `${y}-${pad(m+1)}-${pad(new Date(y,m+1,0).getDate())}`;
+    const ov = document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;';
+    ov.innerHTML = `<div style="background:#fff;border-radius:12px;padding:20px 22px;min-width:300px;display:flex;flex-direction:column;gap:10px;font-size:14px;">
+      <div style="font-weight:700;font-size:16px;">🖨️ 列印格式</div>
+      <label><input type="radio" name="cpFmt" value="grid" checked> 月曆格式（同畫面一樣）</label>
+      <label><input type="radio" name="cpFmt" value="list"> 清單格式（按日期列出公司）</label>
+      <div id="cpListOpts" style="display:none;flex-direction:column;gap:8px;padding-left:22px;">
+        <div>由 <input type="date" id="cpFrom" value="${first}"> 至 <input type="date" id="cpTo" value="${last}"></div>
+        <label><input type="checkbox" id="cpDone"> 包括已完成</label>
+        <label><input type="checkbox" id="cpMeta"> 顯示地區同項目（HK / NAR1）</label>
+        <div style="font-size:12px;color:var(--slate);">地區篩選跟返上面揀嘅 ${escHtml(calJurisdictionFilter || 'All Jurisdiction')}</div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;">
+        <button class="btn-secondary-outline" id="cpCancel">取消</button>
+        <button class="btn-primary" id="cpGo">列印</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const close = ()=> ov.remove();
+    const fmtSel = () => ov.querySelector('input[name=cpFmt]:checked').value;
+    ov.querySelectorAll('input[name=cpFmt]').forEach(r=>r.addEventListener('change', ()=>{ ov.querySelector('#cpListOpts').style.display = fmtSel()==='list' ? 'flex' : 'none'; }));
+    ov.querySelector('#cpCancel').addEventListener('click', close);
+    ov.querySelector('#cpGo').addEventListener('click', ()=>{
+      if(fmtSel()==='grid'){ close(); logActivity('Print Calendar', $('#calMonthLabel').textContent); window.print(); return; }
+      const from = ov.querySelector('#cpFrom').value, to = ov.querySelector('#cpTo').value;
+      if(!from || !to || from > to){ showToast('請揀正確嘅日期範圍'); return; }
+      const incDone = ov.querySelector('#cpDone').checked, meta = ov.querySelector('#cpMeta').checked;
+      close(); printCalList(from, to, incDone, meta);
+    });
+  }
+  function printCalList(from, to, incDone, meta){
+    const list = [];
+    records.forEach(r=>{
+      const done = isCompletedOverall(r);
+      if(done && !incDone) return;
+      if(calJurisdictionFilter && r.jurisdiction !== calJurisdictionFilter) return;
+      const pd = primaryDeadline(r);
+      if(!pd.date || pd.date < from || pd.date > to) return;
+      list.push({date: pd.date, name: r.companyEn, j: r.jurisdiction, label: pd.label, done});
+    });
+    list.sort((a,b)=> a.date < b.date ? -1 : (a.date > b.date ? 1 : (a.name||'').localeCompare(b.name||'')));
+    const byDate = {}; list.forEach(i=>{ (byDate[i.date] = byDate[i.date]||[]).push(i); });
+    const wd = ['日','一','二','三','四','五','六'];
+    const rows = Object.keys(byDate).map(d=>{
+      const dt = new Date(d+'T00:00:00');
+      const items = byDate[d];
+      return `<tr><td style="vertical-align:top;white-space:nowrap;padding:6px 18px 6px 0;font-weight:700;border-top:1px solid #bbb;">${d}（${wd[dt.getDay()]}）<div style="font-weight:400;font-size:12pt;color:#666;">${items.length} 間</div></td>
+        <td style="padding:6px 0;border-top:1px solid #bbb;">${items.map(i=>`<div style="padding:3px 0;">☐ ${escHtml(i.name)}${meta ? ` <span style="color:#666;font-size:12pt;">(${escHtml(i.j||'')}${i.label?' · '+escHtml(i.label):''})</span>` : ''}${i.done ? ' <span style="color:#2e7d32;font-size:12pt;">✓ 已完成</span>' : ''}</div>`).join('')}</td></tr>`;
+    }).join('');
+    const box = document.createElement('div');
+    box.id = 'calListPrint';
+    box.style.cssText = 'position:absolute;left:0;top:0;width:100%;padding:24px;background:#fff;color:#000;font-size:13pt;line-height:1.45;z-index:99999;';
+    box.innerHTML = `<h2 style="margin:0 0 4px;font-size:18pt;">到期清單</h2><div style="margin-bottom:14px;color:#555;font-size:12pt;">${from} 至 ${to} · ${calJurisdictionFilter||'All'} · 共 ${list.length} 間</div>` +
+      (rows ? `<table style="border-collapse:collapse;width:100%;">${rows}</table>` : '<div>呢個範圍內冇到期嘅公司。</div>');
+    document.body.appendChild(box);
+    logActivity('Print Calendar List', `${from} ~ ${to} (${list.length})`);
+    document.body.classList.add('printing-callist');
     window.print();
-  });
+    document.body.classList.remove('printing-callist');
+    box.remove();
+  }
+  $('#calPrint').addEventListener('click', openCalPrintDialog);
   $('#btnPrintFollowup').addEventListener('click', ()=>{
     logActivity('Print Followup', `Range: ${followupRange===0?'today':'7 days'}`);
     document.body.classList.add('printing-followup');
