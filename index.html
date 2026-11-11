@@ -312,7 +312,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
 .cal-more{display:none;}
 @media (max-width:900px){ .cal-cell{min-height:70px;font-size:11px;} }
 .followup-preview{max-height:360px;overflow-y:auto;border:1px solid var(--hair);border-radius:8px;}
-.fu-chip.active{background:var(--navy);color:#fff;}
+.fu-chip.active, .health-chip.active, .health-sev.active{background:var(--navy);color:#fff;}
 .followup-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--hair);font-size:13px;}
 .followup-item:last-child{border-bottom:none;}
 .followup-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
@@ -389,7 +389,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   <div class="brand">
     <div class="chop-mark">妥</div>
     <div>
-      <h1>Company Secretary <span style="font-size:11px;font-weight:600;color:var(--slate);vertical-align:middle;">build 2026-11-05-v5</span></h1>
+      <h1>Company Secretary <span style="font-size:11px;font-weight:600;color:var(--slate);vertical-align:middle;">build 2026-11-11-v2</span></h1>
       <p>Annual Return • Deregistration • Compliance</p>
       <div class="sync-note">
         <span id="cloudStatus"></span><br>
@@ -455,6 +455,10 @@ body.off-view-payment .off-filing-col { display: none !important; }
     <div class="sidebar-item" data-mode="log">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       Activity Log
+    </div>
+    <div class="sidebar-item" data-mode="health">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Data Health
     </div>
     <div class="sidebar-item" data-mode="settings">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -567,6 +571,20 @@ body.off-view-payment .off-filing-col { display: none !important; }
         </select>
       </div>
       <div id="followupPageList"></div>
+    </div>
+
+    <div id="healthView" class="page-view" style="display:none;">
+      <div class="page-view-head">
+        <h2>🩺 Data Health 資料健康檢查</h2>
+        <p>自動檢查：缺 BR 號、重複公司、日期明顯唔合理、疑似舊資料。㩒「✎ 開啟」直接去改，改完返嚟㩒「重新檢查」。</p>
+      </div>
+      <div id="healthSummary" style="margin-bottom:12px;font-size:14px;"></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+        <div id="healthChips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
+        <input type="text" id="healthSearch" placeholder="搜尋公司名 / 問題…" style="padding:7px 12px;border:1px solid var(--hair-dark);border-radius:8px;min-width:200px;">
+        <button class="btn-secondary-outline" id="btnHealthRefresh" style="padding:6px 12px;font-size:12px;">🔄 重新檢查</button>
+      </div>
+      <div id="healthList"></div>
     </div>
 
     <!-- Settings View -->
@@ -917,7 +935,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
           </select>
         </div>
       </div>
-      <div><label>Deadline</label>
+      <div><label>Deadline <span style="font-weight:400;color:var(--slate);font-size:11px;">（自動 = Date of Month + 42 日，可手動改）</span></label>
         <div style="display:flex;gap:8px;">
           <select id="d_deadline_day" style="flex:1;">
             <option value="">Day</option><option value="01">01</option><option value="02">02</option><option value="03">03</option><option value="04">04</option><option value="05">05</option><option value="06">06</option><option value="07">07</option><option value="08">08</option><option value="09">09</option><option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="16">16</option><option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option><option value="21">21</option><option value="22">22</option><option value="23">23</option><option value="24">24</option><option value="25">25</option><option value="26">26</option><option value="27">27</option><option value="28">28</option><option value="29">29</option><option value="30">30</option><option value="31">31</option>
@@ -1804,7 +1822,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   }
 
   let suppressConflictCheck = false;
-  const APP_BUILD = '2026-11-05-v5';
+  const APP_BUILD = '2026-11-11-v2';
   let appStale = false;
   function markStale(newer){
     if(appStale) return; appStale = true;
@@ -2328,7 +2346,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
 
   // --- SIDEBAR / TOP-LEVEL PAGES ---
   let currentPage = 'annual'; 
-  const ALL_PAGE_IDS = ['modeContent','messagesView','notesView','logView','clientsView','calendarView','followupView','settingsView'];
+  const ALL_PAGE_IDS = ['modeContent','messagesView','notesView','logView','clientsView','calendarView','followupView','healthView','settingsView'];
   function showPage(pageId){
     ALL_PAGE_IDS.forEach(id => { $('#'+id).style.display = (id===pageId) ? '' : 'none'; });
   }
@@ -2351,6 +2369,147 @@ body.off-view-payment .off-filing-col { display: none !important; }
   function showClientsPage(){ showPage('clientsView'); currentPage = 'clients'; renderClients(); syncStickyHscroll(); }
   function showCalendarPage(){ showPage('calendarView'); currentPage = 'calendar'; renderCalendar(); syncStickyHscroll(); }
   function showFollowupPage(){ showPage('followupView'); currentPage = 'followup'; renderFollowupPage(); syncStickyHscroll(); }
+  // ===== DATA HEALTH CHECK =====
+  let healthFilter = 'all', healthSev = 'all', healthIssues = [];
+  const H_ITEM_LABEL = {esFiling:'ES Filing', annualReturn:'AR Filing', esFilingPayment:'ES Payment', annualPayment:'AR Payment'};
+  function hDateProblem(label, v, minYear){
+    if(!v) return null;
+    if(!isValidDateStr(v)) return `${label}「${v}」格式唔啱`;
+    const y = +v.slice(0,4);
+    if(y < (minYear || 1990) || y > 2100) return `${label}「${v}」年份唔合理`;
+    return null;
+  }
+  function computeHealthIssues(){
+    const out = [];
+    const todayS = localToday();
+    const add = (sev, cat, type, rec, msg) => out.push({sev, cat, type, id: rec.id, name: rec.companyEn || '(冇名)', jur: rec.jurisdiction || '', msg});
+    const coById = {}; companies.forEach(c=>{ coById[c.id] = c; });
+    const checkLink = (type, r) => {
+      if(!r.companyId) add('warn','missing',type,r,'未連結到公司名冊（冇 companyId）');
+      else if(!coById[r.companyId]) add('err','missing',type,r,'連結嘅公司已經唔喺公司名冊（companyId 失效）');
+    };
+    records.forEach(r=>{
+      const hk = (r.jurisdiction||'HK') === 'HK';
+      if(!(r.brNumber||'').trim() && !coById[r.companyId]) add('warn','missing','annual',r, hk ? '缺 BR 號' : '缺 Company No.');
+      checkLink('annual', r);
+      if(r.filingYear && (+r.filingYear < 2000 || +r.filingYear > 2100)) add('err','date','annual',r,`Filing Year「${r.filingYear}」唔合理`);
+      const dateFields = hk ? [['Deadline',r.deadline],['Sent',r.sent],['Returned',r.returned],['Complete Date',r.cr]] : [];
+      if(hk){ const pi = hDateProblem('Incorporation Date', r.incorpDate, 1850); if(pi) add('err','date','annual',r,pi); }
+      const items = r.complianceItems || {};
+      if(!hk) Object.keys(items).forEach(k=>{ const it = items[k]||{}; [['Due',it.dueDate],['Sent',it.sent],['Returned',it.returned],['Settled',it.settled]].forEach(([l,v])=> dateFields.push([`${H_ITEM_LABEL[k]||k} ${l}`, v])); });
+      dateFields.forEach(([l,v])=>{ const p = hDateProblem(l, v); if(p) add('err','date','annual',r,p); });
+      if(hk){
+        if(!r.incorpDate) add('warn','missing','annual',r,'缺 Incorporation Date');
+        if(!r.annualMonth || !r.annualDay) add('warn','missing','annual',r,'缺 Annual Date 週年日');
+        else {
+          const mo = +r.annualMonth, dy = +r.annualDay;
+          if(!(mo>=1 && mo<=12) || !(dy>=1 && dy<=31) || dy > new Date(2024, mo, 0).getDate()) add('err','date','annual',r,`週年日 ${r.annualMonth}/${r.annualDay} 唔合理`);
+        }
+        if(r.incorpDate && isValidDateStr(r.incorpDate) && r.incorpDate > todayS) add('err','date','annual',r,`成立日期 ${r.incorpDate} 喺將來`);
+        if(r.status !== 'Completed' && !r.deadline) add('err','missing','annual',r,'未完成但冇 Deadline');
+        if(r.deadline && isValidDateStr(r.deadline)){
+          if(!r.filingYear) add('warn','date','annual',r,'冇 Filing Year');
+          else if(Math.abs(+r.deadline.slice(0,4) - +r.filingYear) > 1) add('err','date','annual',r,`Filing Year ${r.filingYear} 同 Deadline ${r.deadline} 相差超過 1 年`);
+          if(r.status !== 'Completed' && daysUntil(r.deadline) < -730) add('warn','stale','annual',r,`逾期超過 2 年（${r.deadline}），疑似舊資料`);
+        }
+        if(r.sent && r.returned && isValidDateStr(r.sent) && isValidDateStr(r.returned) && r.sent > r.returned) add('warn','date','annual',r,`Sent ${r.sent} 遲過 Returned ${r.returned}`);
+        if(r.status === 'Completed' && !r.returned && !r.cr) add('warn','date','annual',r,'已標示 Completed 但冇完成日期');
+        [['Sent',r.sent],['Returned',r.returned]].forEach(([l,v])=>{ if(v && isValidDateStr(v) && v > todayS) add('warn','date','annual',r,`${l} ${v} 喺將來`); });
+      } else {
+        const dues = Object.values(items).map(i=>i&&i.dueDate).filter(v=>v && isValidDateStr(v)).sort();
+        if(!dues.length) add('err','missing','annual',r,'BVI / Cayman 冇任何到期日');
+        else if(r.filingYear && Math.abs(+dues[0].slice(0,4) - +r.filingYear) >= 1) add('warn','date','annual',r,`Filing Year ${r.filingYear} 同最早到期日 ${dues[0]} 唔同年`);
+        Object.keys(items).forEach(k=>{
+          const it = items[k]||{};
+          if(it.sent && it.returned && isValidDateStr(it.sent) && isValidDateStr(it.returned) && it.sent > it.returned) add('warn','date','annual',r,`${H_ITEM_LABEL[k]||k}：Sent ${it.sent} 遲過 Returned ${it.returned}`);
+          if(it.status === 'Completed' && !it.returned) add('warn','date','annual',r,`${H_ITEM_LABEL[k]||k} 已標示 Completed 但冇 Returned 日期`);
+        });
+      }
+    });
+    deregRecords.forEach(r=>{
+      if(!(r.brNumber||'').trim() && !coById[r.companyId]) add('warn','missing','dereg',r,'缺 BR 號');
+      checkLink('dereg', r);
+      ['deadline','sentToClient','sentToIrd','receipt','request88b','nno','sentToCr','gazette','completed'].forEach(k=>{ const p = hDateProblem(k, r[k]); if(p) add('err','date','dereg',r,p); });
+      if(!r.completed && r.deadline && isValidDateStr(r.deadline) && daysUntil(r.deadline) < -1095) add('warn','stale','dereg',r,`逾期超過 3 年（${r.deadline}），疑似舊資料`);
+    });
+    otherRecords.forEach(r=>{
+      if(!(r.brNumber||'').trim() && !coById[r.companyId]) add('warn','missing','other',r,'缺 BR 號');
+      checkLink('other', r);
+      [['Sent',r.sent],['Returned',r.returned],['Complete Date',r.completeDate]].forEach(([l,v])=>{ const p = hDateProblem(l, v); if(p) add('err','date','other',r,p); });
+      if(r.sent && r.returned && isValidDateStr(r.sent) && isValidDateStr(r.returned) && r.sent > r.returned) add('warn','date','other',r,`Sent ${r.sent} 遲過 Returned ${r.returned}`);
+      if(r.status === 'Completed' && !r.completeDate && !r.returned) add('warn','date','other',r,'已標示 Completed 但冇完成日期');
+    });
+    companies.forEach(c=>{
+      if(!(c.brNumber||'').trim()) add('warn','missing','company',c,'公司名冊缺 BR 號 / Company No.');
+      if((c.jurisdiction||'HK') === 'HK'){ const p = hDateProblem('Incorporation Date', c.incorpDate, 1850); if(p) add('err','date','company',c,p); }
+    });
+    const byBr = {}, byName = {};
+    companies.forEach(c=>{
+      const br = (c.brNumber||'').replace(/\s+/g,'').toLowerCase();
+      if(br) (byBr[br] = byBr[br]||[]).push(c);
+      const nk = normalizeName(c.companyEn||'') + '|' + (c.jurisdiction||'HK');
+      if(nk.length > 3) (byName[nk] = byName[nk]||[]).push(c);
+    });
+    Object.keys(byBr).forEach(k=>{
+      const g = byBr[k]; if(g.length < 2) return;
+      const names = new Set(g.map(c=>normalizeName(c.companyEn||'')));
+      if(names.size > 1) g.forEach(c=> add('err','dup','company',c,`BR# ${c.brNumber} 同其他 ${g.length-1} 間公司重複：${g.filter(x=>x!==c).map(x=>x.companyEn).join('、')}`));
+    });
+    Object.keys(byName).forEach(k=>{ const g = byName[k]; if(g.length > 1) g.forEach(c=> add('err','dup','company',c,`公司名冊有 ${g.length} 筆同名紀錄`)); });
+    const buckets = {};
+    companies.forEach(c=>{ const n = normalizeName(c.companyEn||''); if(n.length < 8) return; const k = (c.jurisdiction||'HK') + '|' + n.slice(0,3); (buckets[k] = buckets[k]||[]).push({c, n}); });
+    Object.values(buckets).forEach(b=>{
+      for(let i=0;i<b.length;i++) for(let j=i+1;j<b.length;j++){
+        if(b[i].n === b[j].n) continue;
+        if(Math.abs(b[i].n.length - b[j].n.length) > 3) continue;
+        if(levenshtein(b[i].n, b[j].n) <= 2) add('warn','dup','company',b[i].c,`名好似「${b[j].c.companyEn}」（可能係同一間，打錯字？）`);
+      }
+    });
+    const byRec = {};
+    records.forEach(r=>{ const k = (r.companyId || normalizeName(r.companyEn||'')) + '|' + (r.jurisdiction||'HK') + '|' + (r.filingYear||''); (byRec[k] = byRec[k]||[]).push(r); });
+    Object.values(byRec).forEach(g=>{ if(g.length > 1) g.forEach(r=> add('err','dup','annual',r,`同一間公司同一年（${r.filingYear||'—'}）有 ${g.length} 筆 Annual 紀錄`)); });
+    const byDereg = {};
+    deregRecords.filter(r=>!r.completed).forEach(r=>{ const k = r.companyId || normalizeName(r.companyEn||''); (byDereg[k] = byDereg[k]||[]).push(r); });
+    Object.values(byDereg).forEach(g=>{ if(g.length > 1) g.forEach(r=> add('warn','dup','dereg',r,`同一間公司有 ${g.length} 筆未完成 Dereg`)); });
+    return out;
+  }
+  const HEALTH_CATS = [['all','全部'],['missing','缺資料'],['dup','重複'],['date','日期問題'],['stale','疑似舊資料']];
+  const HEALTH_TYPE = {annual:'Annual', dereg:'Dereg', other:'Other', company:'公司名冊'};
+  function renderHealthPage(){
+    healthIssues = computeHealthIssues();
+    const rank = {err:0, warn:1};
+    const countCat = k => healthIssues.filter(i=>(k==='all'||i.cat===k) && (healthSev==='all'||i.sev===healthSev)).length;
+    const nErr = healthIssues.filter(i=>i.sev==='err').length, nWarn = healthIssues.filter(i=>i.sev==='warn').length;
+    $('#healthSummary').innerHTML = healthIssues.length
+      ? `共 <b>${healthIssues.length}</b> 項：<span style="color:#b3261e;font-weight:700;">🔴 ${nErr} 錯誤</span> · <span style="color:#b26a00;font-weight:700;">🟠 ${nWarn} 提示</span>　（記錄 ${records.length} · Dereg ${deregRecords.length} · Other ${otherRecords.length} · 公司 ${companies.length}）`
+      : '✅ 冇發現問題，資料好乾淨。';
+    $('#healthChips').innerHTML = HEALTH_CATS.map(([k,l])=>`<button class="btn-secondary-outline health-chip ${healthFilter===k?'active':''}" data-k="${k}" style="padding:5px 12px;font-size:12px;">${l} (${countCat(k)})</button>`).join('') +
+      [['all','全部嚴重度'],['err','🔴 只睇錯誤'],['warn','🟠 只睇提示']].map(([k,l])=>`<button class="btn-secondary-outline health-sev ${healthSev===k?'active':''}" data-s="${k}" style="padding:5px 12px;font-size:12px;margin-left:${k==='all'?'16px':'0'};">${l}</button>`).join('');
+    $('#healthChips').querySelectorAll('.health-chip').forEach(b=>b.addEventListener('click', ()=>{ healthFilter=b.dataset.k; renderHealthPage(); }));
+    $('#healthChips').querySelectorAll('.health-sev').forEach(b=>b.addEventListener('click', ()=>{ healthSev=b.dataset.s; renderHealthPage(); }));
+    const q = ($('#healthSearch').value||'').trim().toLowerCase();
+    const list = healthIssues.filter(i=> (healthFilter==='all'||i.cat===healthFilter) && (healthSev==='all'||i.sev===healthSev) && (!q || (i.name+' '+i.msg).toLowerCase().includes(q)))
+      .sort((a,b)=> rank[a.sev]-rank[b.sev] || (a.name||'').localeCompare(b.name||''));
+    const shownMax = 400;
+    $('#healthList').innerHTML = list.length ? list.slice(0,shownMax).map(i=>`
+      <div class="followup-item" style="flex-wrap:wrap;">
+        <span class="followup-dot ${i.sev==='err'?'overdue':'today'}"></span>
+        <span class="fu-name">${escHtml(i.name)}${i.jur?` <span style="color:var(--slate);font-weight:500;">(${escHtml(i.jur)})</span>`:''}</span>
+        <span class="fu-when" style="white-space:normal;max-width:55%;text-align:right;">${escHtml(i.msg)}</span>
+        <span class="jurisdiction-badge" style="margin-left:8px;">${HEALTH_TYPE[i.type]}</span>
+        <button class="btn-secondary health-open" data-type="${i.type}" data-id="${i.id}" style="padding:5px 10px;font-size:12px;margin-left:8px;">✎ 開啟</button>
+      </div>`).join('') + (list.length > shownMax ? `<div class="followup-empty">只顯示頭 ${shownMax} 項，共 ${list.length} 項，請用上面篩選或搜尋縮窄。</div>` : '')
+      : '<div class="followup-empty">呢個篩選下冇問題 ✅</div>';
+    $('#healthList').querySelectorAll('.health-open').forEach(b=>b.addEventListener('click', ()=> openHealthTarget(b.dataset.type, b.dataset.id)));
+  }
+  function openHealthTarget(type, id){
+    const setActive = mode => document.querySelectorAll('.sidebar-item').forEach(i=>i.classList.toggle('active', i.dataset.mode===mode));
+    if(type==='annual'){ const r = records.find(x=>x.id===id); if(r){ showModeContent('annual'); setActive('annual'); openModal(r); } }
+    else if(type==='dereg'){ const r = deregRecords.find(x=>x.id===id); if(r){ showModeContent('dereg'); setActive('dereg'); openDeregModal(r); } }
+    else if(type==='other'){ const r = otherRecords.find(x=>x.id===id); if(r){ showModeContent('other'); setActive('other'); openOtherModal(r); } }
+    else if(type==='company'){ const c = companies.find(x=>x.id===id); if(c){ showClientsPage(); setActive('clients'); openClientModal(c); } }
+  }
+  function showHealthPage(){ showPage('healthView'); currentPage = 'health'; renderHealthPage(); syncStickyHscroll(); }
   function showSettingsPage(){ showPage('settingsView'); currentPage = 'settings'; syncStickyHscroll(); }
   document.querySelectorAll('.sidebar-item').forEach(item=>{
     item.addEventListener('click', ()=>{
@@ -2364,6 +2523,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
       else if(mode === 'clients') showClientsPage();
       else if(mode === 'calendar') showCalendarPage();
       else if(mode === 'followup') showFollowupPage();
+      else if(mode === 'health') showHealthPage();
       else if(mode === 'settings') showSettingsPage();
       else showModeContent(mode);
     });
@@ -2639,6 +2799,8 @@ body.off-view-payment .off-filing-col { display: none !important; }
     box.remove();
   }
   $('#calPrint').addEventListener('click', openCalPrintDialog);
+  $('#healthSearch').addEventListener('input', renderHealthPage);
+  $('#btnHealthRefresh').addEventListener('click', renderHealthPage);
   $('#btnPrintFollowup').addEventListener('click', ()=>{
     logActivity('Print Followup', `Range: ${followupRange===0?'today':'7 days'}`);
     document.body.classList.add('printing-followup');
@@ -4187,6 +4349,36 @@ body.off-view-payment .off-filing-col { display: none !important; }
 
   // Dereg Modal
   const deregOverlay = $('#deregOverlay');
+  // ---- Dereg: auto-fill Date of Month (from company) and Deadline (= Date of Month + 42 days) ----
+  const DM_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let deregDeadlineManual = false;
+  function companyAnnualDM(co){
+    if(!co) return null;
+    const dd = parseInt(co.annualDay,10), mm = parseInt(co.annualMonth,10);
+    if(dd>=1 && dd<=31 && mm>=1 && mm<=12) return [String(dd).padStart(2,'0'), DM_MONTHS[mm-1]];
+    if(co.incorpDate && isValidDateStr(co.incorpDate)) return [co.incorpDate.slice(8,10), DM_MONTHS[parseInt(co.incorpDate.slice(5,7),10)-1]];
+    return null;
+  }
+  function calcDeregDeadline(day, mon){
+    const mi = DM_MONTHS.indexOf(mon); const dd = parseInt(day,10);
+    if(mi < 0 || !(dd>=1 && dd<=31)) return null;
+    const d = new Date(new Date().getFullYear(), mi, dd);
+    d.setDate(d.getDate() + 42);
+    return [String(d.getDate()).padStart(2,'0'), DM_MONTHS[d.getMonth()]];
+  }
+  function autoDeregDeadline(){
+    if(deregDeadlineManual) return;
+    const r = calcDeregDeadline($('#d_dateOfMonth_day').value, $('#d_dateOfMonth_month').value);
+    if(r){ $('#d_deadline_day').value = r[0]; $('#d_deadline_month').value = r[1]; }
+  }
+  function autoDeregFromCompany(co, overwrite){
+    const dm = companyAnnualDM(co);
+    if(dm && (overwrite || (!$('#d_dateOfMonth_day').value && !$('#d_dateOfMonth_month').value))){
+      $('#d_dateOfMonth_day').value = dm[0]; $('#d_dateOfMonth_month').value = dm[1];
+    }
+    autoDeregDeadline();
+  }
+
   function openDeregModal(rec){
     deregEditingId = rec ? rec.id : null;
     $('#deregModalTitle').textContent = rec ? '編輯撤銷註冊 Edit Deregistration' : '新增撤銷註冊 New Deregistration';
@@ -4210,6 +4402,8 @@ body.off-view-payment .off-filing-col { display: none !important; }
     $('#d_dateOfMonth_day').value = domDay; $('#d_dateOfMonth_month').value = domMonth;
     const [ddlDay, ddlMonth] = splitDayMonth(rec?.deadline);
     $('#d_deadline_day').value = ddlDay; $('#d_deadline_month').value = ddlMonth;
+    deregDeadlineManual = !!(ddlDay && ddlMonth);
+    if(matchedCo) autoDeregFromCompany(matchedCo, false); else autoDeregDeadline();
     $('#d_sentToClient').value = rec?.sentToClient || '';
     $('#d_sentToIrd').value = rec?.sentToIrd || '';
     $('#d_receipt').value = rec?.receipt || '';
@@ -4235,7 +4429,11 @@ body.off-view-payment .off-filing-col { display: none !important; }
     $('#btnViewCompanyNotesDereg').dataset.coId = co.id;
     $('#btnViewCompanyNotesDereg').dataset.coName = co.companyEn;
     $('#d_en').value = co.companyEn||''; $('#d_br').value = co.brNumber||'';
+    deregDeadlineManual = false;
+    autoDeregFromCompany(co, true);
   });
+  ['d_dateOfMonth_day','d_dateOfMonth_month'].forEach(id=> $('#'+id).addEventListener('change', ()=>{ autoDeregDeadline(); }));
+  ['d_deadline_day','d_deadline_month'].forEach(id=> $('#'+id).addEventListener('change', ()=>{ deregDeadlineManual = true; }));
   $('#btnViewCompanyNotesDereg').addEventListener('click', ()=>{
     const id = $('#btnViewCompanyNotesDereg').dataset.coId, name = $('#btnViewCompanyNotesDereg').dataset.coName;
     if(!id) return;
