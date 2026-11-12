@@ -389,7 +389,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   <div class="brand">
     <div class="chop-mark">妥</div>
     <div>
-      <h1>Company Secretary <span style="font-size:11px;font-weight:600;color:var(--slate);vertical-align:middle;">build 2026-11-12-v1</span></h1>
+      <h1>Company Secretary <span style="font-size:11px;font-weight:600;color:var(--slate);vertical-align:middle;">build 2026-11-12-v3</span></h1>
       <p>Annual Return • Deregistration • Compliance</p>
       <div class="sync-note">
         <span id="cloudStatus"></span><br>
@@ -473,10 +473,14 @@ body.off-view-payment .off-filing-col { display: none !important; }
         <h2>🕒 Activity Log</h2>
         <p>用途：永久記錄邊個喺咩時間改過資料，方便多人共用時追蹤責任。</p>
       </div>
-      <div class="notes-search-wrap" style="margin-bottom:14px;max-width:360px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+      <div class="notes-search-wrap" style="margin-bottom:0;max-width:360px;flex:1;min-width:240px;">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <input type="text" id="logSearchInput" placeholder="搜尋用戶 / 動作 / 目標 Search user, action, target...">
         <button id="logSearchClear" title="清除 Clear" style="display:none;">✕</button>
+      </div>
+      <input type="text" id="logCompanyInput" list="logCompanyList" placeholder="🏢 只睇某公司 Company..." style="padding:9px 12px;border:1px solid var(--hair);border-radius:8px;min-width:240px;font:inherit;background:var(--card);color:inherit;">
+      <datalist id="logCompanyList"></datalist>
       </div>
       <div class="table-wrap" style="padding:0; background:var(--card); border-radius:10px; border:1px solid var(--hair);">
         <table style="min-width:700px;">
@@ -585,6 +589,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
         <button class="btn-secondary-outline" id="btnHealthRefresh" style="padding:6px 12px;font-size:12px;">🔄 重新檢查</button>
       </div>
       <div id="healthList"></div>
+      <div id="healthSkipped" style="margin-top:14px;"></div>
     </div>
 
     <!-- Settings View -->
@@ -1195,27 +1200,63 @@ body.off-view-payment .off-filing-col { display: none !important; }
     window.localStorage.setItem('comsec-user', currentUser);
   }
 
-  function logActivity(desc, entity) {
+  const DIFF_LABEL = {companyEn:'Company', companyZh:'中文名', brNumber:'BR#/Company No.', group:'Group', code:'Code', jurisdiction:'Jurisdiction', secretary:'Secretary', ro:'RO',
+    incorpDate:'Incorporation Date', annualMonth:'週年月', annualDay:'週年日', filingYear:'Filing Year', deadline:'Deadline', status:'Status', sent:'Sent', method:'Method',
+    returned:'Returned', cr:'CR Date', reminders:'Reminders', lastReminded:'Last Reminded', notes:'Note', note:'Note', remark:'Remark', otherText:'Other Text', docTypes:'Doc Types',
+    completeDate:'Complete Date', dateOfMonth:'Date of Month', sentToClient:'Sent to Client', sentToIrd:'Sent to IRD', receipt:'Receipt', request88b:'Request 88B', nno:'NNO',
+    sentToCr:'Sent to CR', gazette:'Gazette', completed:'Completed', dueDate:'Due', clientSettle:'Client Settled', settled:'Settled', paymentMethod:'Payment Method'};
+  const DIFF_LONG = new Set(['notes','note','remark','otherText']);
+  const DIFF_SKIP = new Set(['id','companyId','hIgnore','fuMuted','fuSnooze']);
+  const ITEM_NAME = {esFiling:'ES Filing', annualReturn:'AR Filing', esFilingPayment:'ES Payment', annualPayment:'AR Payment'};
+  function diffRec(oldR, newR){
+    const out = [];
+    const norm = v => (v===undefined||v===null) ? '' : Array.isArray(v) ? v.join(', ') : String(v);
+    const show = v => v==='' ? '(空)' : v;
+    const cmp = (prefix, o, n) => {
+      o = o||{}; n = n||{};
+      new Set([...Object.keys(o), ...Object.keys(n)]).forEach(k=>{
+        if(DIFF_SKIP.has(k) || k==='complianceItems') return;
+        const a = norm(o[k]), b = norm(n[k]);
+        if(a === b) return;
+        const lab = prefix + (DIFF_LABEL[k]||k);
+        out.push(DIFF_LONG.has(k) ? `${lab} 已修改` : `${lab}: ${show(a)} → ${show(b)}`);
+      });
+    };
+    cmp('', oldR, newR);
+    const oi = (oldR&&oldR.complianceItems)||{}, ni = (newR&&newR.complianceItems)||{};
+    new Set([...Object.keys(oi), ...Object.keys(ni)]).forEach(k=> cmp((ITEM_NAME[k]||k)+' ', oi[k], ni[k]));
+    let t = out.join('；');
+    if(t.length > 400) t = t.slice(0, 400) + `…（共 ${out.length} 項改動）`;
+    return t;
+  }
+  function logActivity(desc, entity, detail) {
     activityLogs.unshift({
       id: uid(),
       user: currentUser,
       time: new Date().toISOString(),
       desc: desc,
-      entity: entity || ''
+      entity: entity || '',
+      detail: detail || ''
     });
     if(activityLogs.length > 1000) activityLogs.length = 1000;
   }
 
   let logSearchQuery = '';
+  let logCompanyFilter = '';
   function renderLog() {
     const tbody = $('#logTbody');
     const q = logSearchQuery.trim().toLowerCase();
+    const dl = $('#logCompanyList');
+    if(dl){ const ents = [...new Set(activityLogs.map(l=>l.entity).filter(e=>e && e.length<80))].sort().slice(0,600); dl.innerHTML = ents.map(e=>`<option value="${escHtml(e)}"></option>`).join(''); }
     let list = activityLogs;
+    const cq = (logCompanyFilter||'').trim().toLowerCase();
+    if(cq) list = list.filter(l => (l.entity||'').toLowerCase().includes(cq));
     if(q){
       list = list.filter(l =>
         (l.user||'').toLowerCase().includes(q) ||
         (l.desc||'').toLowerCase().includes(q) ||
-        (l.entity||'').toLowerCase().includes(q)
+        (l.entity||'').toLowerCase().includes(q) ||
+        (l.detail||'').toLowerCase().includes(q)
       );
     }
     if(!activityLogs.length) {
@@ -1231,7 +1272,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
         <td class="mono" style="font-size:12px;color:var(--slate); padding:12px 20px;">${new Date(l.time).toLocaleString('zh-HK', {hour12: false})}</td>
         <td style="font-weight:600;">${highlightMatch(l.user, logSearchQuery)}</td>
         <td>${highlightMatch(l.desc, logSearchQuery)}</td>
-        <td style="font-weight:600;">${highlightMatch(l.entity, logSearchQuery)}</td>
+        <td><div style="font-weight:600;">${highlightMatch(l.entity, logSearchQuery)}</div>${l.detail?`<div style="font-size:12px;color:var(--slate);margin-top:3px;white-space:normal;line-height:1.5;">${highlightMatch(l.detail, logSearchQuery)}</div>`:''}</td>
       </tr>
     `).join('');
   }
@@ -1833,7 +1874,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   }
 
   let suppressConflictCheck = false;
-  const APP_BUILD = '2026-11-12-v1';
+  const APP_BUILD = '2026-11-12-v3';
   let appStale = false;
   function markStale(newer){
     if(appStale) return; appStale = true;
@@ -2291,6 +2332,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
       brNumber: data.brNumber||'', secretary: data.secretary||'', ro: data.ro||'',
       incorpDate: data.incorpDate||'', annualMonth: data.annualMonth||'', annualDay: data.annualDay||''
     };
+    if(idx>-1 && companies[idx].hIgnore && companies[idx].hIgnore.length) co.hIgnore = companies[idx].hIgnore;
     if(idx>-1) companies[idx] = co; else companies.push(co);
     return co.id;
   }
@@ -2393,7 +2435,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   function computeHealthIssues(){
     const out = [];
     const todayS = localToday();
-    const add = (sev, cat, type, rec, msg) => out.push({sev, cat, type, id: rec.id, name: rec.companyEn || '(冇名)', jur: rec.jurisdiction || '', msg});
+    const add = (sev, cat, type, rec, msg, gk) => out.push({sev, cat, type, id: rec.id, name: rec.companyEn || '(冇名)', jur: rec.jurisdiction || '', msg, gk: gk||'', skipped: !!(rec.hIgnore && rec.hIgnore.includes(msg))});
     const coById = {}; companies.forEach(c=>{ coById[c.id] = c; });
     const checkLink = (type, r) => {
       if(!r.companyId) add('warn','missing',type,r,'未連結到公司名冊（冇 companyId）');
@@ -2465,9 +2507,9 @@ body.off-view-payment .off-filing-col { display: none !important; }
     Object.keys(byBr).forEach(k=>{
       const g = byBr[k]; if(g.length < 2) return;
       const names = new Set(g.map(c=>normalizeName(c.companyEn||'')));
-      if(names.size > 1) g.forEach(c=> add('err','dup','company',c,`BR# ${c.brNumber} 同其他 ${g.length-1} 間公司重複：${g.filter(x=>x!==c).map(x=>x.companyEn).join('、')}`));
+      if(names.size > 1) g.forEach(c=> add('err','dup','company',c,`BR# ${c.brNumber} 同其他 ${g.length-1} 間公司重複：${g.filter(x=>x!==c).map(x=>x.companyEn).join('、')}`,'br|'+k));
     });
-    Object.keys(byName).forEach(k=>{ const g = byName[k]; if(g.length > 1) g.forEach(c=> add('err','dup','company',c,`公司名冊有 ${g.length} 筆同名紀錄`)); });
+    Object.keys(byName).forEach(k=>{ const g = byName[k]; if(g.length > 1) g.forEach(c=> add('err','dup','company',c,`公司名冊有 ${g.length} 筆同名紀錄`,'nm|'+k)); });
     const buckets = {};
     companies.forEach(c=>{ const n = normalizeName(c.companyEn||''); if(n.length < 8) return; const k = (c.jurisdiction||'HK') + '|' + n.slice(0,3); (buckets[k] = buckets[k]||[]).push({c, n}); });
     Object.values(buckets).forEach(b=>{
@@ -2479,16 +2521,18 @@ body.off-view-payment .off-filing-col { display: none !important; }
     });
     const byRec = {};
     records.forEach(r=>{ const k = (r.companyId || normalizeName(r.companyEn||'')) + '|' + (r.jurisdiction||'HK') + '|' + (r.filingYear||''); (byRec[k] = byRec[k]||[]).push(r); });
-    Object.values(byRec).forEach(g=>{ if(g.length > 1) g.forEach(r=> add('err','dup','annual',r,`同一間公司同一年（${r.filingYear||'—'}）有 ${g.length} 筆 Annual 紀錄`)); });
+    Object.values(byRec).forEach(g=>{ if(g.length > 1) g.forEach(r=> add('err','dup','annual',r,`同一間公司同一年（${r.filingYear||'—'}）有 ${g.length} 筆 Annual 紀錄`,'yr|'+g.map(x=>x.id).sort().join(','))); });
     const byDereg = {};
     deregRecords.filter(r=>!r.completed).forEach(r=>{ const k = r.companyId || normalizeName(r.companyEn||''); (byDereg[k] = byDereg[k]||[]).push(r); });
-    Object.values(byDereg).forEach(g=>{ if(g.length > 1) g.forEach(r=> add('warn','dup','dereg',r,`同一間公司有 ${g.length} 筆未完成 Dereg`)); });
+    Object.values(byDereg).forEach(g=>{ if(g.length > 1) g.forEach(r=> add('warn','dup','dereg',r,`同一間公司有 ${g.length} 筆未完成 Dereg`,'dr|'+g.map(x=>x.id).sort().join(','))); });
     return out;
   }
   const HEALTH_CATS = [['all','全部'],['missing','缺資料'],['dup','重複'],['date','日期問題'],['stale','疑似舊資料']];
   const HEALTH_TYPE = {annual:'Annual', dereg:'Dereg', other:'Other', company:'公司名冊'};
   function renderHealthPage(){
-    healthIssues = computeHealthIssues();
+    const allIssues = computeHealthIssues();
+    healthIssues = allIssues.filter(i=>!i.skipped);
+    const skippedIssues = allIssues.filter(i=>i.skipped);
     const rank = {err:0, warn:1};
     const countCat = k => healthIssues.filter(i=>(k==='all'||i.cat===k) && (healthSev==='all'||i.sev===healthSev)).length;
     const nErr = healthIssues.filter(i=>i.sev==='err').length, nWarn = healthIssues.filter(i=>i.sev==='warn').length;
@@ -2509,10 +2553,42 @@ body.off-view-payment .off-filing-col { display: none !important; }
         <span class="fu-name">${escHtml(i.name)}${i.jur?` <span style="color:var(--slate);font-weight:500;">(${escHtml(i.jur)})</span>`:''}</span>
         <span class="fu-when" style="white-space:normal;max-width:55%;text-align:right;">${escHtml(i.msg)}</span>
         <span class="jurisdiction-badge" style="margin-left:8px;">${HEALTH_TYPE[i.type]}</span>
-        <button class="btn-secondary health-open" data-type="${i.type}" data-id="${i.id}" style="padding:5px 10px;font-size:12px;margin-left:8px;">✎ 開啟</button>
+        <button class="btn-secondary health-open" data-type="${i.type}" data-id="${i.id}" style="padding:5px 10px;font-size:12px;margin-left:8px;">✎ 開啟</button><button class="btn-secondary-outline health-skip" data-type="${i.type}" data-id="${i.id}" data-msg="${escHtml(i.msg)}" data-gk="${escHtml(i.gk)}" title="呢個唔算問題，以後唔再顯示" style="padding:5px 10px;font-size:12px;margin-left:6px;">⏭ Skip</button>
       </div>`).join('') + (list.length > shownMax ? `<div class="followup-empty">只顯示頭 ${shownMax} 項，共 ${list.length} 項，請用上面篩選或搜尋縮窄。</div>` : '')
       : '<div class="followup-empty">呢個篩選下冇問題 ✅</div>';
     $('#healthList').querySelectorAll('.health-open').forEach(b=>b.addEventListener('click', ()=> openHealthTarget(b.dataset.type, b.dataset.id)));
+    $('#healthList').querySelectorAll('.health-skip').forEach(b=>b.addEventListener('click', ()=> healthSkip(allIssues, b.dataset, true)));
+    const sk = $('#healthSkipped');
+    if(sk){
+      sk.innerHTML = skippedIssues.length ? `<details ${healthShowSkipped?'open':''} id="healthSkipDet"><summary style="cursor:pointer;color:var(--slate);font-size:13px;">已略過 Skipped (${skippedIssues.length})</summary>` + skippedIssues.map(i=>`
+        <div class="followup-item" style="flex-wrap:wrap;opacity:.75;">
+          <span class="fu-name">${escHtml(i.name)}${i.jur?` (${escHtml(i.jur)})`:''}</span>
+          <span class="fu-when" style="white-space:normal;max-width:55%;text-align:right;">${escHtml(i.msg)}</span>
+          <span class="jurisdiction-badge" style="margin-left:8px;">${HEALTH_TYPE[i.type]}</span>
+          <button class="btn-secondary-outline health-unskip" data-type="${i.type}" data-id="${i.id}" data-msg="${escHtml(i.msg)}" data-gk="${escHtml(i.gk)}" style="padding:5px 10px;font-size:12px;margin-left:8px;">↩ 復原</button>
+        </div>`).join('') + '</details>' : '';
+      const det = $('#healthSkipDet'); if(det) det.addEventListener('toggle', ()=>{ healthShowSkipped = det.open; });
+      sk.querySelectorAll('.health-unskip').forEach(b=>b.addEventListener('click', ()=> healthSkip(allIssues, b.dataset, false)));
+    }
+  }
+  let healthShowSkipped = false;
+  async function healthSkip(all, d, on){
+    const targets = all.filter(i => (d.gk ? i.gk === d.gk : (i.id === d.id && i.msg === d.msg)) );
+    if(!targets.length) return;
+    pushUndo();
+    let rc=false, cc=false;
+    targets.forEach(i=>{
+      const list = i.type==='annual' ? records : i.type==='dereg' ? deregRecords : i.type==='other' ? otherRecords : companies;
+      const o = list.find(x=>x.id===i.id); if(!o) return;
+      const cur = (o.hIgnore||[]).filter(m=>m!==i.msg);
+      if(on) cur.push(i.msg);
+      if(cur.length) o.hIgnore = cur; else delete o.hIgnore;
+      if(i.type==='company') cc=true; else rc=true;
+    });
+    logActivity(on?'Health Skip':'Health Unskip', `${targets[0].name}: ${targets[0].msg}`);
+    await saveData(); if(cc) await saveCompanies();
+    renderHealthPage();
+    showToast(on?'已略過 Skipped（可喺下面復原）':'已復原 Restored');
   }
   function openHealthTarget(type, id){
     const setActive = mode => document.querySelectorAll('.sidebar-item').forEach(i=>i.classList.toggle('active', i.dataset.mode===mode));
@@ -2922,7 +2998,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
       if(!confirm(`呢個 BR# / Company No.「${data.brNumber}」已經有另一間公司用緊：\n${dupBR.companyEn}\n\n係咪都係要繼續儲存？\nAlready used by "${dupBR.companyEn}". Save anyway?`)) return;
     }
     pushUndo();
-    logActivity(clientEditingId ? 'Edit Client' : 'New Client', en);
+    logActivity(clientEditingId ? 'Edit Client' : 'New Client', en, clientEditingId ? diffRec(companies.find(c=>c.id===clientEditingId), {...companies.find(c=>c.id===clientEditingId), ...data}) : '');
     upsertCompany(data, clientEditingId);
     await saveCompanies();
     closeClientModal();
@@ -3039,6 +3115,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
     $('#logSearchClear').style.display = logSearchQuery ? '' : 'none';
     renderLog();
   });
+  $('#logCompanyInput').addEventListener('input', ()=>{ logCompanyFilter = $('#logCompanyInput').value; renderLog(); });
   $('#logSearchClear').addEventListener('click', ()=>{
     logSearchQuery = '';
     $('#logSearchInput').value = '';
@@ -4352,7 +4429,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
     }
 
     pushUndo();
-    logActivity(editingId ? 'Edit Annual Record' : 'New Annual Record', data.companyEn);
+    logActivity(editingId ? 'Edit Annual Record' : 'New Annual Record', data.companyEn, editingId ? diffRec(records.find(r=>r.id===editingId), {...records.find(r=>r.id===editingId), ...data}) : '');
     data.companyId = upsertCompany(data, $('#f_companyPick').value || null);
     if(editingId) { const idx=records.findIndex(r=>r.id===editingId); if(idx>-1) records[idx]={...records[idx],...data}; }
     else records.push({id:uid(), ...data});
@@ -4492,7 +4569,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
     }
 
     pushUndo();
-    logActivity(deregEditingId ? 'Edit Dereg Record' : 'New Dereg Record', en);
+    logActivity(deregEditingId ? 'Edit Dereg Record' : 'New Dereg Record', en, deregEditingId ? diffRec(deregRecords.find(r=>r.id===deregEditingId), {...deregRecords.find(r=>r.id===deregEditingId), ...data}) : '');
     data.companyId = upsertCompany({companyEn: en, brNumber: data.brNumber}, $('#d_companyPick').value || null);
     if(deregEditingId) { const idx=deregRecords.findIndex(r=>r.id===deregEditingId); if(idx>-1) deregRecords[idx]={...deregRecords[idx],...data}; }
     else deregRecords.push({id:uid(), ...data});
@@ -4620,8 +4697,9 @@ body.off-view-payment .off-filing-col { display: none !important; }
       }
     }
 
+    const otherOld = () => otherRecords.find(r=>r.id===otherEditingId);
     pushUndo();
-    logActivity(otherEditingId ? 'Edit Other Record' : 'New Other Record', en);
+    logActivity(otherEditingId ? 'Edit Other Record' : 'New Other Record', en, otherEditingId ? diffRec(otherOld(), {...otherOld(), ...data}) : '');
     data.companyId = upsertCompany({companyEn: en, brNumber: data.brNumber}, $('#o_companyPick').value || null);
     if(otherEditingId) { const idx=otherRecords.findIndex(r=>r.id===otherEditingId); if(idx>-1) otherRecords[idx]={...otherRecords[idx],...data}; }
     else otherRecords.push({id:uid(), ...data});
