@@ -389,7 +389,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   <div class="brand">
     <div class="chop-mark">妥</div>
     <div>
-      <h1>Company Secretary <span style="font-size:11px;font-weight:600;color:var(--slate);vertical-align:middle;">build 2026-11-12-v3</span></h1>
+      <h1>Company Secretary <span style="font-size:11px;font-weight:600;color:var(--slate);vertical-align:middle;">build 2026-11-13-v2</span></h1>
       <p>Annual Return • Deregistration • Compliance</p>
       <div class="sync-note">
         <span id="cloudStatus"></span><br>
@@ -583,6 +583,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
         <p>自動檢查：缺 BR 號、重複公司、日期明顯唔合理、疑似舊資料。㩒「✎ 開啟」直接去改，改完返嚟㩒「重新檢查」。</p>
       </div>
       <div id="healthSummary" style="margin-bottom:12px;font-size:14px;"></div>
+      <div id="healthLinkBar" style="margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
         <div id="healthChips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
         <input type="text" id="healthSearch" placeholder="搜尋公司名 / 問題…" style="padding:7px 12px;border:1px solid var(--hair-dark);border-radius:8px;min-width:200px;">
@@ -1798,7 +1799,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   let lastFolderBackupDate = '';
   async function maybeWriteFolderBackup(){
     if(!backupFolderHandle || backupFolderNeedsPermission) return;
-    const today = new Date().toISOString().slice(0,10);
+    const today = localToday();
     if(lastFolderBackupDate === today) return;
     try{
       const filename = `comsec-backup-${today}.json`;
@@ -1874,7 +1875,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
   }
 
   let suppressConflictCheck = false;
-  const APP_BUILD = '2026-11-12-v3';
+  const APP_BUILD = '2026-11-13-v2';
   let appStale = false;
   function markStale(newer){
     if(appStale) return; appStale = true;
@@ -2146,7 +2147,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
     try{ await storageSet(BACKUPS_KEY, JSON.stringify(localBackups), false); }catch(e){}
   }
   async function maybeTakeDailyBackup(){
-    const today = new Date().toISOString().slice(0,10);
+    const today = localToday();
     if(localBackups.length && localBackups[0].date === today) return; // already backed up today
     // snapshot the state as it is BEFORE today's changes accumulate (best-effort: current in-memory state)
     localBackups.unshift({
@@ -2539,6 +2540,9 @@ body.off-view-payment .off-filing-col { display: none !important; }
     $('#healthSummary').innerHTML = healthIssues.length
       ? `共 <b>${healthIssues.length}</b> 項：<span style="color:#b3261e;font-weight:700;">🔴 ${nErr} 錯誤</span> · <span style="color:#b26a00;font-weight:700;">🟠 ${nWarn} 提示</span>　（記錄 ${records.length} · Dereg ${deregRecords.length} · Other ${otherRecords.length} · 公司 ${companies.length}）`
       : '✅ 冇發現問題，資料好乾淨。';
+    const unlinked = [records, deregRecords, otherRecords].reduce((n,l)=>n+l.filter(r=>!r.companyId || !companies.some(c=>c.id===r.companyId)).length, 0);
+    $('#healthLinkBar').innerHTML = unlinked ? `<button class="btn-secondary" id="btnAutoLink" style="padding:7px 14px;font-size:13px;">🔗 自動連結 ${unlinked} 筆未連結記錄到公司名冊</button> <span style="font-size:12px;color:var(--slate);">按公司名 + 地區配對；名冊冇嘅會自動新增</span>` : '';
+    const al = $('#btnAutoLink'); if(al) al.addEventListener('click', autoLinkCompanies);
     $('#healthChips').innerHTML = HEALTH_CATS.map(([k,l])=>`<button class="btn-secondary-outline health-chip ${healthFilter===k?'active':''}" data-k="${k}" style="padding:5px 12px;font-size:12px;">${l} (${countCat(k)})</button>`).join('') +
       [['all','全部嚴重度'],['err','🔴 只睇錯誤'],['warn','🟠 只睇提示']].map(([k,l])=>`<button class="btn-secondary-outline health-sev ${healthSev===k?'active':''}" data-s="${k}" style="padding:5px 12px;font-size:12px;margin-left:${k==='all'?'16px':'0'};">${l}</button>`).join('');
     $('#healthChips').querySelectorAll('.health-chip').forEach(b=>b.addEventListener('click', ()=>{ healthFilter=b.dataset.k; renderHealthPage(); }));
@@ -2572,6 +2576,31 @@ body.off-view-payment .off-filing-col { display: none !important; }
     }
   }
   let healthShowSkipped = false;
+  async function autoLinkCompanies(){
+    const bad = r => !r.companyId || !companies.some(c=>c.id===r.companyId);
+    const todo = [['annual',records],['dereg',deregRecords],['other',otherRecords]].map(([t,l])=>[t,l.filter(bad)]);
+    const total = todo.reduce((n,x)=>n+x[1].length,0);
+    if(!total) return;
+    if(!confirm(`會將 ${total} 筆未連結嘅記錄，按「公司名 + 地區」連結到公司名冊；名冊入面搵唔到嘅會自動新增公司。\n可以用 Undo 復原。繼續？`)) return;
+    pushUndo();
+    const before = companies.length;
+    const key = (en,j) => normalizeName(en||'') + '|' + (j||'HK');
+    todo.forEach(([t,list])=>{
+      list.forEach(r=>{
+        if(!(r.companyEn||'').trim()) return;
+        const j = t==='annual' ? (r.jurisdiction||'HK') : 'HK';
+        const k = key(r.companyEn, j);
+        let co = companies.find(c=>key(c.companyEn, c.jurisdiction)===k);
+        if(co){ r.companyId = co.id; return; }
+        r.companyId = upsertCompany(t==='annual' ? r : {companyEn:r.companyEn, brNumber:r.brNumber}, null);
+      });
+    });
+    const added = companies.length - before;
+    logActivity('Auto Link Companies', `${total} records linked, ${added} companies added`);
+    await saveData(); await saveCompanies();
+    renderHealthPage(); updateSidebarBadges && updateSidebarBadges();
+    showToast(`已連結 ${total} 筆，新增 ${added} 間公司`);
+  }
   async function healthSkip(all, d, on){
     const targets = all.filter(i => (d.gk ? i.gk === d.gk : (i.id === d.id && i.msg === d.msg)) );
     if(!targets.length) return;
@@ -2773,7 +2802,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
     const firstDow = new Date(y, m, 1).getDay();
     const daysInMonth = new Date(y, m+1, 0).getDate();
     const daysInPrevMonth = new Date(y, m, 0).getDate();
-    const todayStr = new Date().toISOString().slice(0,10);
+    const todayStr = localToday();
 
     const cells = [];
     for(let i=0;i<firstDow;i++){ cells.push({d: daysInPrevMonth-firstDow+1+i, other:true, date:null}); }
@@ -2803,7 +2832,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
     $('#calDayTitle').textContent = fmtDate(dateStr);
     $('#calDayList').innerHTML = items.map(i=>`
       <div class="followup-item" style="cursor:pointer;" data-id="${i.id}">
-        <span class="followup-dot ${dateStr<new Date().toISOString().slice(0,10)?'overdue':'today'}"></span>
+        <span class="followup-dot ${dateStr<localToday()?'overdue':'today'}"></span>
         <span class="fu-name">${escHtml(i.name)} <span class="jurisdiction-badge ${i.jurisdiction}">${i.jurisdiction}</span></span>
         <span class="fu-when">${i.label}</span>
       </div>`).join('');
@@ -3216,7 +3245,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
       section('Overdue', overdue, [178,58,46]);
       section('Due Today', dueToday, [185,129,46]);
     }
-    doc.save(`Followups_${new Date().toISOString().slice(0,10)}.pdf`);
+    doc.save(`Followups_${localToday()}.pdf`);
     logActivity('Download Follow-up PDF', `${items.length} items`);
     showToast('已下載PDF Downloaded');
   });
@@ -3485,13 +3514,13 @@ body.off-view-payment .off-filing-col { display: none !important; }
     if(rec.jurisdiction === 'HK'){
       if(rec.status === 'Completed') return;
       rec.status = 'Completed';
-      const today = new Date().toISOString().slice(0,10);
+      const today = localToday();
       if(!rec.returned) rec.returned = today; rec.cr = today;
       const nextYear = (parseInt(rec.filingYear) || new Date().getFullYear()) + 1;
       const exists = records.some(r => r.companyEn.trim().toLowerCase() === rec.companyEn.trim().toLowerCase() && r.jurisdiction === rec.jurisdiction && String(r.filingYear) === String(nextYear));
       if(!exists){
         let nd = '';
-        if(rec.annualMonth && rec.annualDay) { const d = new Date(`${nextYear}-${rec.annualMonth}-${rec.annualDay}T00:00:00`); d.setDate(d.getDate() + 42); nd = d.toISOString().slice(0, 10); }
+        if(rec.annualMonth && rec.annualDay) { const d = new Date(+nextYear, +rec.annualMonth - 1, +rec.annualDay); d.setDate(d.getDate() + 42); nd = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
         records.push({...rec, id: uid(), filingYear: nextYear, deadline: nd, status: 'Pending', sent: '', returned: '', cr: '', reminders: 0, lastReminded: '', certRequests: []});
       }
     } else {
@@ -3499,7 +3528,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
       if(!pd.key || !rec.complianceItems || !rec.complianceItems[pd.key]) return;
       const item = rec.complianceItems[pd.key];
       const isPayment = (pd.key === 'esFilingPayment' || pd.key === 'annualPayment');
-      const today = new Date().toISOString().slice(0,10);
+      const today = localToday();
       if(isPayment){ if(!item.settled) item.settled = today; }
       else { if(item.status !== 'Completed'){ item.status = 'Completed'; if(!item.returned) item.returned = today; } }
       const gk = OFF_GROUPS.payment.includes(pd.key) ? OFF_GROUPS.payment : OFF_GROUPS.filing;
@@ -3527,9 +3556,9 @@ body.off-view-payment .off-filing-col { display: none !important; }
   async function completeFollowupItem(type, id){
     let rec, name;
     if(type === 'annual'){ rec = records.find(r=>r.id===id); if(!rec) return; name = rec.companyEn; pushUndo(); markAnnualDone(rec); }
-    else if(type === 'dereg'){ rec = deregRecords.find(r=>r.id===id); if(!rec) return; name = rec.companyEn; pushUndo(); if(!rec.completed) rec.completed = new Date().toISOString().slice(0,10); }
+    else if(type === 'dereg'){ rec = deregRecords.find(r=>r.id===id); if(!rec) return; name = rec.companyEn; pushUndo(); if(!rec.completed) rec.completed = localToday(); }
     else if(type === 'other'){ rec = otherRecords.find(r=>r.id===id); if(!rec) return; name = rec.companyEn; pushUndo();
-      rec.status = 'Completed'; const today = new Date().toISOString().slice(0,10);
+      rec.status = 'Completed'; const today = localToday();
       if(!rec.returned) rec.returned = today; if(!rec.completeDate) rec.completeDate = today;
     } else return;
     logActivity('Complete via Followup', name);
@@ -4156,7 +4185,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
     const n = checked.length;
     if(!confirm(`確定要批量完成 ${n} 筆記錄？ Mark ${n} records as complete?`)) return;
     pushUndo();
-    const today = new Date().toISOString().slice(0,10);
+    const today = localToday();
     let count = 0;
     checked.forEach(chk=>{
       const {id, type} = chk.dataset;
@@ -4732,13 +4761,13 @@ body.off-view-payment .off-filing-col { display: none !important; }
           const wasCompleted = rec.status === 'Completed';
           rec.status = wasCompleted ? 'Pending' : 'Completed';
           if(!wasCompleted){
-            const today = new Date().toISOString().slice(0,10);
+            const today = localToday();
             if(!rec.returned) rec.returned = today; rec.cr = today;
             const nextYear = (parseInt(rec.filingYear) || new Date().getFullYear()) + 1;
             const exists = records.some(r => r.companyEn.trim().toLowerCase() === rec.companyEn.trim().toLowerCase() && r.jurisdiction === rec.jurisdiction && String(r.filingYear) === String(nextYear));
             if(!exists){
               let nd = '';
-              if(rec.annualMonth && rec.annualDay) { const d = new Date(`${nextYear}-${rec.annualMonth}-${rec.annualDay}T00:00:00`); d.setDate(d.getDate() + 42); nd = d.toISOString().slice(0, 10); }
+              if(rec.annualMonth && rec.annualDay) { const d = new Date(+nextYear, +rec.annualMonth - 1, +rec.annualDay); d.setDate(d.getDate() + 42); nd = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
               records.push({...rec, id: uid(), filingYear: nextYear, deadline: nd, status: 'Pending', sent: '', returned: '', cr: '', reminders: 0, lastReminded: '', certRequests: []});
               showToast(`已自動建立 ${nextYear} 記錄 ${nextYear} record created`);
             } else showToast('Completed');
@@ -4748,7 +4777,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
           if(!pd.key || !rec.complianceItems || !rec.complianceItems[pd.key]){ showToast('未有到期日 No due date set for this item'); return; }
           const item = rec.complianceItems[pd.key];
           const isPayment = (pd.key === 'esFilingPayment' || pd.key === 'annualPayment');
-          const today = new Date().toISOString().slice(0,10);
+          const today = localToday();
           if(isPayment){
             const wasSettled = !!item.settled;
             item.settled = wasSettled ? '' : today;
@@ -4770,7 +4799,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
       else if(action === 'remind'){
         pushUndo();
         logActivity('Add Reminder', rec.companyEn);
-        const today = new Date().toISOString().slice(0,10);
+        const today = localToday();
         if(rec.jurisdiction === 'HK'){ rec.reminders=(rec.reminders||0)+1; rec.lastReminded=today; }
         else {
           const pd = primaryDeadline(rec);
@@ -4819,7 +4848,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
         const wasCompleted = rec.status === 'Completed';
         rec.status = wasCompleted ? 'Pending' : 'Completed';
         if(!wasCompleted){
-          const today = new Date().toISOString().slice(0,10);
+          const today = localToday();
           if(!rec.returned) rec.returned = today;
           if(!rec.completeDate) rec.completeDate = today;
         }
@@ -4874,7 +4903,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
       if(rec){
         pushUndo();
         logActivity('WhatsApp Reminder Opened', rec.companyEn);
-        const today = new Date().toISOString().slice(0,10);
+        const today = localToday();
         if(waRecType === 'annual'){
           if(rec.jurisdiction === 'HK'){ rec.reminders=(rec.reminders||0)+1; rec.lastReminded=today; }
           else {
@@ -5004,7 +5033,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Deregistration');
-    XLSX.writeFile(wb, `ComSec_Dereg_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `ComSec_Dereg_${localToday()}.xlsx`);
     logActivity('Export Filtered Excel', 'Dereg');
     showToast('已匯出 Excel');
   });
@@ -5030,7 +5059,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
       headStyles: {fillColor: [21,33,58]},
       margin: {left:14, right:14},
     });
-    doc.save(`ComSec_Dereg_${new Date().toISOString().slice(0,10)}.pdf`);
+    doc.save(`ComSec_Dereg_${localToday()}.pdf`);
     logActivity('Export Filtered PDF', 'Dereg');
     showToast('已匯出 PDF');
   });
@@ -5046,7 +5075,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Other');
-    XLSX.writeFile(wb, `ComSec_Other_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `ComSec_Other_${localToday()}.xlsx`);
     logActivity('Export Filtered Excel', 'Other');
     showToast('已匯出 Excel');
   });
@@ -5072,7 +5101,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
       headStyles: {fillColor: [21,33,58]},
       margin: {left:14, right:14},
     });
-    doc.save(`ComSec_Other_${new Date().toISOString().slice(0,10)}.pdf`);
+    doc.save(`ComSec_Other_${localToday()}.pdf`);
     logActivity('Export Filtered PDF', 'Other');
     showToast('已匯出 PDF');
   });
@@ -5083,7 +5112,7 @@ body.off-view-payment .off-filing-col { display: none !important; }
     if(list.length === 0){ showToast('Nothing to export'); return; }
     const ws = XLSX.utils.json_to_sheet(list);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    XLSX.writeFile(wb, `ComSec_Tracker_${currentAppMode}_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `ComSec_Tracker_${currentAppMode}_${localToday()}.xlsx`);
     showToast('已匯出 Excel');
   });
 
